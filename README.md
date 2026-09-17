@@ -1,2 +1,3 @@
-# Basko-cafe-pong-
-Always enjoy 
+# Basko Cafe Pong
+
+Static HTML game ready for GitHub Pages or Netlify.

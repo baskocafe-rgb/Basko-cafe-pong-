@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b1020">
+<title>Basko Cafe Pong</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--text:#f1f5f9;--accent:#7dd3fc;--pink:#f9a8d4}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#172033 0%,#0b1020 32%,#050914 100%);color:var(--text);font-family:Arial,Helvetica,sans-serif;overflow-x:hidden}
+.game-wrapper{width:min(980px,95vw);text-align:center;padding:14px 0}
+.title{margin:0 0 10px;font-size:clamp(2rem,7vw,3rem);letter-spacing:.08em;text-transform:uppercase;text-shadow:0 0 12px rgba(125,211,252,.8)}
+.scoreboard{display:flex;justify-content:center;align-items:center;gap:12px;font-size:clamp(1.15rem,4vw,2.2rem);font-weight:700;margin-bottom:12px}
+.score-box{background:#ffffff08;border:1px solid #ffffff1f;border-radius:12px;padding:8px 14px;min-width:min(200px,42vw);box-shadow:0 0 18px #7dd3fc26}
+.players{display:flex;justify-content:center;flex-wrap:wrap;gap:7px 10px;margin:0 0 14px;font-size:.82rem;color:#dbeafe}
+.pill{background:#94a3b81f;border:1px solid #94a3b859;border-radius:999px;padding:6px 10px;font-weight:700}
+.pill.highlight{border-color:#7dd3fcb3;box-shadow:0 0 12px #7dd3fc33}
+.canvas-wrap{position:relative;width:100%}
+canvas{display:block;width:100%;height:auto;aspect-ratio:9/5;border:3px solid #ffffffe6;background:linear-gradient(180deg,#030712,#071122);border-radius:14px;box-shadow:0 0 30px #7dd3fc33,0 0 50px #f9a8d41f;cursor:crosshair;touch-action:none}
+.controls{display:flex;justify-content:center;gap:10px;margin-top:10px}
+.control-btn{width:70px;height:46px;padding:0;font-size:1.25rem}
+.footer{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap;color:#cbd5e1;font-size:.9rem}
+button{background:linear-gradient(135deg,#7dd3fc,#c084fc);color:#04111d;border:0;border-radius:10px;padding:10px 16px;font-weight:800;font-size:.95rem;cursor:pointer;box-shadow:0 0 18px #7dd3fc40}
+button:active{transform:scale(.97)}
+.hint{opacity:.8}
+@media(max-width:600px){.hint{display:none}.game-wrapper{width:96vw}.title{font-size:1.65rem}.scoreboard{gap:7px}.score-box{min-width:0;flex:1;padding:7px 8px}.players{margin-bottom:10px}.footer{margin-top:8px}}
+</style>
+</head>
+<body>
+<main class="game-wrapper">
+<h1 class="title">☕ Basko Cafe Pong</h1>
+<div class="scoreboard">
+<div class="score-box">Elias: <span id="playerScore">0</span></div>
+<div class="score-box">Computer: <span id="computerScore">0</span></div>
+</div>
+<div class="players">
+<span class="pill highlight">Elias</span><span class="pill">Abbas</span><span class="pill">Abdul</span>
+<span class="pill">Jamal</span><span class="pill">Aya</span><span class="pill">Anna</span>
+</div>
+<div class="canvas-wrap"><canvas id="gameCanvas" width="900" height="500"></canvas></div>
+<div class="controls">
+<button class="control-btn" id="upBtn" aria-label="Move up">▲</button>
+<button class="control-btn" id="downBtn" aria-label="Move down">▼</button>
+</div>
+<div class="footer">
+<span class="hint">Mouse/touch or Arrow keys to move</span>
+<button id="restartButton">New Match</button>
+</div>
+</main>
+<script>
+const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d");
+const playerScoreEl=document.getElementById("playerScore"),computerScoreEl=document.getElementById("computerScore");
+const restartButton=document.getElementById("restartButton"),playerName="Elias",winningScore=7;
+const paddleWidth=14,paddleHeight=100,paddleSpeed=8,ballSize=14;
+const player={x:24,y:200,width:paddleWidth,height:paddleHeight,speed:0,baseHeight:paddleHeight,boostTimer:0};
+const computer={x:862,y:200,width:paddleWidth,height:paddleHeight,speed:5,baseHeight:paddleHeight,boostTimer:0};
+const ball={x:443,y:243,size:ballSize,speed:6.5,velocityX:6.5,velocityY:3};
+const particles=[],powerUps=[];
+let playerScore=0,computerScore=0,lastTouch="player",gameOver=false,powerUpTimer=0,message="First to 7 wins!",messageTimer=0;
+
+function resetBall(direction=1){
+ ball.x=canvas.width/2-ball.size/2;ball.y=canvas.height/2-ball.size/2;
+ ball.velocityX=ball.speed*direction;
+ ball.velocityY=(Math.random()>.5?1:-1)*(2+Math.random()*3);
+}
+function clampPaddle(p){p.y=Math.max(0,Math.min(canvas.height-p.height,p.y))}
+function spawnParticles(x,y,color,count=12){for(let i=0;i<count;i++)particles.push({x,y,vx:(Math.random()-.5)*7,vy:(Math.random()-.5)*7,life:30+Math.random()*18,color})}
+function spawnPowerUp(){
+ if(powerUps.length)return;
+ const types=["boost","slow","grow","shrink"],type=types[Math.floor(Math.random()*types.length)];
+ powerUps.push({x:70+Math.random()*(canvas.width-140),y:50+Math.random()*(canvas.height-100),size:16,type,pulse:Math.random()*Math.PI*2});
+}
+function applyPowerUp(type,target){
+ if(type==="boost")target.boostTimer=280;
+ else if(type==="grow"){target.height=Math.min(target.baseHeight+32,160);target.boostTimer=260}
+ else if(type==="slow"){ball.speed=Math.max(4.2,ball.speed*.82);ball.velocityX*=.82;ball.velocityY*=.82}
+ else if(type==="shrink"){const loser=target===player?computer:player;loser.height=Math.max(loser.baseHeight-18,60);loser.boostTimer=260}
+}
+function resetAfterScore(winner){
+ playerScoreEl.textContent=playerScore;computerScoreEl.textContent=computerScore;
+ if(playerScore>=winningScore||computerScore>=winningScore){gameOver=true;message=winner==="player"?`${playerName} wins!`:"Computer wins!";messageTimer=240}
+ else{message=winner==="player"?`${playerName} scores!`:"Computer scores!";messageTimer=80}
+ resetBall(winner==="player"?1:-1);ball.speed=6.5;
+}
+function resetGame(){
+ playerScore=computerScore=0;playerScoreEl.textContent=0;computerScoreEl.textContent=0;
+ player.y=canvas.height/2-player.height/2;computer.y=canvas.height/2-paddleHeight/2;
+ player.height=computer.height=paddleHeight;player.boostTimer=computer.boostTimer=0;
+ player.speed=0;gameOver=false;powerUps.length=0;particles.length=0;powerUpTimer=0;
+ message="First to 7 wins!";messageTimer=120;resetBall(Math.random()>.5?1:-1);
+}
+function overlap(a,b){return a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y}
+function updatePlayer(){
+ player.y+=player.speed;clampPaddle(player);
+ if(player.boostTimer>0)player.boostTimer--;else player.height=player.baseHeight;
+}
+function updateComputer(){
+ const targetY=ball.y-computer.height/2+ball.size/2,d=targetY-computer.y;
+ if(Math.abs(d)>10)computer.y+=Math.sign(d)*computer.speed;clampPaddle(computer);
+ if(computer.boostTimer>0)computer.boostTimer--;else computer.height=computer.baseHeight;
+}
+function wallCollision(){
+ if(ball.y<=0){ball.y=0;ball.velocityY*=-1;spawnParticles(ball.x,0,"#7dd3fc",5)}
+ if(ball.y+ball.size>=canvas.height){ball.y=canvas.height-ball.size;ball.velocityY*=-1;spawnParticles(ball.x,canvas.height,"#f9a8d4",5)}
+}
+function paddleCollision(p,isPlayer){
+ if(!overlap(ball,p))return;
+ const center=p.y+p.height/2,bc=ball.y+ball.size/2,hit=(bc-center)/(p.height/2);
+ if(isPlayer){ball.x=p.x+p.width;ball.velocityX=Math.abs(ball.velocityX);lastTouch="player"}
+ else{ball.x=p.x-ball.size;ball.velocityX=-Math.abs(ball.velocityX);lastTouch="computer"}
+ const base=Math.min(Math.abs(ball.velocityX)+.45,13),dir=isPlayer?1:-1,boost=p.boostTimer>0?1.8:0;
+ ball.velocityX=dir*(base+boost);ball.velocityY=hit*6.5;spawnParticles(ball.x,bc,"#facc15",10);
+}
+function powerCollision(){
+ for(let i=powerUps.length-1;i>=0;i--){
+  const p=powerUps[i];p.pulse+=.09;
+  const box={x:p.x-p.size,y:p.y-p.size,width:p.size*2,height:p.size*2};
+  if(overlap(ball,box)){
+   const target=lastTouch==="player"?player:computer;applyPowerUp(p.type,target);
+   spawnParticles(p.x,p.y,(target===player?"#4ade80":"#f87171"),16);powerUps.splice(i,1);
+  }
+ }
+}
+function scoring(){
+ if(ball.x+ball.size<0){computerScore++;resetAfterScore("computer")}
+ else if(ball.x>canvas.width){playerScore++;resetAfterScore("player")}
+}
+function updateParticles(){
+ for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life--;if(p.life<=0)particles.splice(i,1)}
+}
+function update(){
+ if(gameOver){updateParticles();if(messageTimer>0)messageTimer--;return}
+ updatePlayer();updateComputer();if(messageTimer>0)messageTimer--;
+ powerUpTimer++;if(powerUpTimer>260&&powerUps.length===0){spawnPowerUp();powerUpTimer=0}
+ ball.x+=ball.velocityX;ball.y+=ball.velocityY;wallCollision();paddleCollision(player,true);paddleCollision(computer,false);powerCollision();scoring();updateParticles();
+}
+function drawCenterLine(){
+ ctx.setLineDash([12,14]);ctx.beginPath();ctx.moveTo(450,0);ctx.lineTo(450,500);ctx.strokeStyle="#ffffff40";ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);
+}
+function drawPowerUps(){
+ const labels={boost:["#4ade80","B"],slow:["#facc15","S"],grow:["#7dd3fc","G"],shrink:["#f87171","R"]};
+ for(const p of powerUps){const [color,label]=labels[p.type],r=p.size+Math.sin(p.pulse)*3;ctx.save();ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#0b1020";ctx.font="bold 11px Arial";ctx.textAlign="center";ctx.fillText(label,p.x,p.y+4);ctx.restore()}
+}
+function drawMessage(){
+ if(messageTimer<=0)return;ctx.save();ctx.font="700 26px Arial";ctx.textAlign="center";ctx.fillStyle="#ffffffe6";ctx.shadowColor="#7dd3fc";ctx.shadowBlur=18;ctx.fillText(message,450,50);ctx.restore();
+}
+function draw(){
+ ctx.clearRect(0,0,900,500);drawCenterLine();
+ for(const p of particles){ctx.fillStyle=p.color;ctx.globalAlpha=Math.max(0,p.life/48);ctx.fillRect(p.x,p.y,4,4)}ctx.globalAlpha=1;
+ drawPowerUps();ctx.fillStyle="#f8fafc";ctx.shadowColor="#7dd3fc";ctx.shadowBlur=18;
+ ctx.fillRect(player.x,player.y,player.width,player.height);ctx.fillRect(computer.x,computer.y,computer.width,computer.height);ctx.shadowBlur=0;
+ ctx.fillStyle="#facc15";ctx.beginPath();ctx.arc(ball.x+7,ball.y+7,7,0,Math.PI*2);ctx.fill();drawMessage();
+}
+function movePlayerTo(clientY){
+ const b=canvas.getBoundingClientRect(),y=(clientY-b.top)*(canvas.height/b.height);player.y=y-player.height/2;clampPaddle(player);
+}
+function pointerMove(e){if(e.touches)e.preventDefault();movePlayerTo(e.touches?e.touches[0].clientY:e.clientY)}
+window.addEventListener("keydown",e=>{if(e.key==="ArrowUp"||e.key==="ArrowDown")e.preventDefault();if(e.key==="ArrowUp")player.speed=-paddleSpeed;if(e.key==="ArrowDown")player.speed=paddleSpeed});
+window.addEventListener("keyup",e=>{if(e.key==="ArrowUp"&&player.speed<0)player.speed=0;if(e.key==="ArrowDown"&&player.speed>0)player.speed=0});
+canvas.addEventListener("mousemove",movePlayerTo);canvas.addEventListener("touchstart",pointerMove,{passive:false});canvas.addEventListener("touchmove",pointerMove,{passive:false});
+function hold(btn,dir){const start=e=>{e.preventDefault();player.speed=dir*paddleSpeed},stop=e=>{e.preventDefault();if(player.speed===dir*paddleSpeed)player.speed=0};btn.addEventListener("pointerdown",start);btn.addEventListener("pointerup",stop);btn.addEventListener("pointerleave",stop);btn.addEventListener("pointercancel",stop)}
+hold(document.getElementById("upBtn"),-1);hold(document.getElementById("downBtn"),1);
+restartButton.addEventListener("click",resetGame);resetGame();
+(function loop(){update();draw();requestAnimationFrame(loop)})();
+</script>
+</body>
+</html>
